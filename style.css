@@ -1,0 +1,465 @@
+* {
+    box-sizing: border-box;
+}
+
+
+body {
+
+    margin: 0;
+
+    font-family:
+        Arial,
+        Helvetica,
+        "Microsoft YaHei",
+        sans-serif;
+
+    background: #0b0f14;
+
+    color: #e8edf3;
+}
+
+
+/* ========================================================
+   Header
+   ======================================================== */
+
+header {
+
+    height: 90px;
+
+    padding: 0 30px;
+
+    display: flex;
+
+    align-items: center;
+
+    justify-content: space-between;
+
+    border-bottom:
+        1px solid #252d36;
+
+    background: #10151c;
+}
+
+
+header h1 {
+
+    margin: 0;
+
+    letter-spacing: 6px;
+
+    font-size: 24px;
+
+    color: #8fd0ff;
+}
+
+
+header p {
+
+    margin: 5px 0 0;
+
+    color: #7f8b98;
+
+    font-size: 13px;
+
+    letter-spacing: 1px;
+}
+
+
+.status {
+
+    padding: 8px 14px;
+
+    border:
+        1px solid #2b3a4a;
+
+    border-radius: 6px;
+
+    font-size: 12px;
+
+    letter-spacing: 1px;
+
+    color: #7fd0a0;
+}
+
+
+/* ========================================================
+   Main
+   ======================================================== */
+
+main {
+
+    display: grid;
+
+    grid-template-columns:
+        360px
+        1fr;
+
+    gap: 20px;
+
+    padding: 20px;
+
+    max-width: 1700px;
+
+    margin: auto;
+}
+
+
+/* ========================================================
+   Panels
+   ======================================================== */
+
+.panel {
+
+    background: #11171f;
+
+    border:
+        1px solid #252d36;
+
+    border-radius: 10px;
+
+    padding: 20px;
+}
+
+
+.panel h2 {
+
+    margin-top: 0;
+
+    font-size: 16px;
+
+    letter-spacing: 1px;
+}
+
+
+.panel h3 {
+
+    grid-column: 1 / -1;
+
+    margin: 4px 0 6px;
+
+    font-size: 12px;
+
+    text-transform: uppercase;
+
+    letter-spacing: 1px;
+
+    color: #7f8b98;
+}
+
+
+/* ========================================================
+   Input grid
+   ======================================================== */
+
+.parameter-group {
+
+    display: grid;
+
+    grid-template-columns:
+        repeat(2, 1fr);
+
+    gap: 10px;
+
+    margin-bottom: 16px;
+}
+
+
+label {
+
+    display: flex;
+
+    flex-direction: column;
+
+    gap: 5px;
+
+    font-size: 11px;
+
+    color: #8995a2;
+}
+
+
+input {
+
+    width: 100%;
+
+    padding: 9px;
+
+    border-radius: 5px;
+
+    border:
+        1px solid #303a45;
+
+    background: #0b1016;
+
+    color: #e8edf3;
+
+    outline: none;
+}
+
+
+input:focus {
+
+    border-color: #4a7ba5;
+}
+
+
+/* ========================================================
+   Buttons
+   ======================================================== */
+
+button {
+
+    border: none;
+
+    border-radius: 6px;
+
+    padding: 10px 16px;
+
+    background: #e7edf3;
+
+    color: #11171f;
+
+    cursor: pointer;
+
+    font-weight: bold;
+
+    letter-spacing: 1px;
+}
+
+
+button:hover {
+
+    opacity: 0.85;
+}
+
+
+#run-button {
+
+    width: 100%;
+
+    margin-top: 6px;
+
+    padding: 13px;
+
+    background: #8fd0ff;
+
+}
+
+
+/* ========================================================
+   Viewer
+   ======================================================== */
+
+.viewer-header {
+
+    display: flex;
+
+    align-items: center;
+
+    justify-content: space-between;
+
+    gap: 12px;
+
+    margin-bottom: 12px;
+}
+
+
+.view-buttons {
+
+    display: flex;
+
+    gap: 8px;
+}
+
+
+.view-btn {
+
+    font-size: 11px;
+
+    padding: 7px 14px;
+
+    background: #1c2530;
+
+    color: #9fb3c4;
+
+    border:
+        1px solid #2b3a4a;
+}
+
+
+.view-btn.active {
+
+    background: #4a7ba5;
+
+    color: #ffffff;
+
+    border-color: #4a7ba5;
+}
+
+
+.viewer {
+
+    position: relative;
+
+    min-height: 620px;
+
+    border-radius: 8px;
+
+    overflow: hidden;
+
+    background: #05080c;
+}
+
+
+.viewer canvas {
+
+    display: block;
+}
+
+
+.controls {
+
+    display: flex;
+
+    gap: 10px;
+
+    margin-top: 12px;
+}
+
+
+.controls button {
+
+    font-size: 11px;
+
+    padding:
+        8px 14px;
+}
+
+
+.timeline-container {
+
+    margin-top: 12px;
+}
+
+
+.timeline-container input {
+
+    padding: 0;
+}
+
+
+.hint {
+
+    margin: 12px 0 0;
+
+    color: #5f6f7d;
+
+    font-size: 11px;
+
+    letter-spacing: 0.3px;
+}
+
+
+/* ========================================================
+   Results
+   ======================================================== */
+
+.results-section {
+
+    display: grid;
+
+    grid-template-columns:
+        repeat(5, 1fr);
+
+    gap: 10px;
+
+    padding: 0 20px 20px;
+
+    max-width: 1700px;
+
+    margin: auto;
+}
+
+
+.result-card {
+
+    padding: 14px;
+
+    background: #0c1117;
+
+    border:
+        1px solid #252d36;
+
+    border-radius: 7px;
+}
+
+
+.result-card span {
+
+    display: block;
+
+    color: #788593;
+
+    font-size: 10px;
+
+    margin-bottom: 8px;
+}
+
+
+.result-card strong {
+
+    font-size: 12.5px;
+
+    word-break: break-all;
+}
+
+
+/* ========================================================
+   Responsive
+   ======================================================== */
+
+@media (max-width: 1000px) {
+
+    main {
+
+        grid-template-columns: 1fr;
+    }
+
+    .results-section {
+
+        grid-template-columns:
+            repeat(3, 1fr);
+    }
+
+}
+
+
+@media (max-width: 600px) {
+
+    main {
+
+        padding: 10px;
+    }
+
+    header {
+
+        padding: 0 15px;
+    }
+
+    .parameter-group {
+
+        grid-template-columns: 1fr;
+    }
+
+    .results-section {
+
+        grid-template-columns: 1fr;
+    }
+
+    .view-buttons {
+
+        flex-wrap: wrap;
+    }
+
+}

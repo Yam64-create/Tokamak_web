@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>托卡马克粒子模拟 · Tokamak Particle Simulation</title>
+
+    <link
+        rel="icon"
+        href="data:,"
+    >
+
+    <link
+        rel="stylesheet"
+        href="./style.css"
+    >
+
+</head>
+
+
+<body>
+
+
+<!-- =========================================================
+     Header
+     ========================================================= -->
+
+<header class="header">
+
+    <div>
+
+        <h1>
+            TOKAMAK
+        </h1>
+
+        <p>
+            Charged Particle Confinement Simulation
+        </p>
+
+    </div>
+
+    <div
+        id="status"
+        class="status"
+    >
+        LOCAL ENGINE
+    </div>
+
+</header>
+
+
+<!-- =========================================================
+     Main layout
+     ========================================================= -->
+
+<main class="main-container">
+
+
+    <!-- =====================================================
+         Parameter panel
+         ===================================================== -->
+
+    <section class="panel parameter-panel">
+
+        <h2>
+            参数 · PARAMETERS
+        </h2>
+
+
+        <div class="parameter-group">
+
+            <h3>
+                装置 · Device
+            </h3>
+
+
+            <label>
+                R₀ 大半径 (m)
+
+                <input
+                    id="R0"
+                    type="number"
+                    value="2.0"
+                    step="any"
+                >
+
+            </label>
+
+
+            <label>
+                a 小半径 (m)
+
+                <input
+                    id="a"
+                    type="number"
+                    value="0.6"
+                    step="any"
+                >
+
+            </label>
+
+
+            <label>
+                B₀ 环向磁场 (T)
+
+                <input
+                    id="B0"
+                    type="number"
+                    value="0.05"
+                    step="any"
+                >
+
+            </label>
+
+
+            <label>
+                q 安全因子（磁轴）
+
+                <input
+                    id="q"
+                    type="number"
+                    value="3.0"
+                    step="any"
+                >
+
+            </label>
+
+        </div>
+
+
+        <div class="parameter-group">
+
+            <h3>
+                粒子 · Particle
+            </h3>
+
+
+            <label>
+                电荷 q (C)
+
+                <input
+                    id="qCharge"
+                    type="number"
+                    value="1.6e-19"
+                    step="any"
+                >
+
+            </label>
+
+
+            <label>
+                质量 m (kg)
+
+                <input
+                    id="m"
+                    type="number"
+                    value="3.34e-27"
+                    step="any"
+                >
+
+            </label>
+
+
+            <label>
+                初始小半径 r₀ (m)
+
+                <input
+                    id="rSurf"
+                    type="number"
+                    value="0.3"
+                    step="any"
+                >
+
+            </label>
+
+
+            <label>
+                平行速度 v∥ (m/s)
+
+                <input
+                    id="vPar"
+                    type="number"
+                    value="20000"
+                    step="any"
+                >
+
+            </label>
+
+
+            <label>
+                垂直速度 v⊥ (m/s)
+
+                <input
+                    id="vPerp"
+                    type="number"
+                    value="5000"
+                    step="any"
+                >
+
+            </label>
+
+        </div>
+
+
+        <div class="parameter-group">
+
+            <h3>
+                模拟 · Simulation
+            </h3>
+
+
+            <label>
+                环向圈数
+
+                <input
+                    id="toroidalTurns"
+                    type="number"
+                    value="2"
+                    step="any"
+                >
+
+            </label>
+
+
+            <label>
+                每回旋周期步数
+
+                <input
+                    id="stepsPerGyro"
+                    type="number"
+                    value="30"
+                    step="1"
+                >
+
+            </label>
+
+        </div>
+
+
+        <button
+            id="run-button"
+            class="run-button"
+        >
+            RUN SIMULATION
+        </button>
+
+    </section>
+
+
+    <!-- =====================================================
+         Viewer
+         ===================================================== -->
+
+    <section class="panel viewer-panel">
+
+        <div class="viewer-header">
+
+            <h2>
+                3D 视图 · 3D VIEWER
+            </h2>
+
+            <div class="view-buttons">
+
+                <button
+                    id="view-default"
+                    class="view-btn active"
+                >
+                    默认
+                </button>
+
+                <button
+                    id="view-top"
+                    class="view-btn"
+                >
+                    俯视
+                </button>
+
+                <button
+                    id="view-side"
+                    class="view-btn"
+                >
+                    侧视
+                </button>
+
+                <button
+                    id="view-front"
+                    class="view-btn"
+                >
+                    正视
+                </button>
+
+            </div>
+
+        </div>
+
+
+        <div
+            id="viewer"
+            class="viewer"
+        >
+        </div>
+
+
+        <div class="controls">
+
+            <button
+                id="play-button"
+            >
+                PLAY
+            </button>
+
+
+            <button
+                id="pause-button"
+            >
+                PAUSE
+            </button>
+
+
+            <button
+                id="reset-button"
+            >
+                RESET
+            </button>
+
+        </div>
+
+
+        <div class="timeline-container">
+
+            <input
+                id="timeline"
+                type="range"
+                min="0"
+                max="0"
+                value="0"
+            >
+
+            <span
+                id="time-display"
+            >
+                t = 0 s
+            </span>
+
+        </div>
+
+
+        <p class="hint">
+            提示：鼠标拖拽可自由旋转视角，滚轮缩放。视图按钮可快速切换机位。
+        </p>
+
+    </section>
+
+
+</main>
+
+
+<!-- =========================================================
+     Results
+     ========================================================= -->
+
+<section class="results-section">
+
+    <div class="result-card">
+        <span>发射点磁场 B (T)</span>
+        <strong id="B-launch">-</strong>
+    </div>
+
+    <div class="result-card">
+        <span>环向场 B<sub>φ</sub> (T)</span>
+        <strong id="B-phi">-</strong>
+    </div>
+
+    <div class="result-card">
+        <span>极向场 B<sub>θ</sub> (T)</span>
+        <strong id="B-theta">-</strong>
+    </div>
+
+    <div class="result-card">
+        <span>螺旋角 (deg)</span>
+        <strong id="pitch">-</strong>
+    </div>
+
+    <div class="result-card">
+        <span>局部安全因子 q(r₀)</span>
+        <strong id="q-local">-</strong>
+    </div>
+
+    <div class="result-card">
+        <span>回旋周期 (s)</span>
+        <strong id="cyc-period">-</strong>
+    </div>
+
+    <div class="result-card">
+        <span>回旋半径 ρ (m)</span>
+        <strong id="gyro-radius">-</strong>
+    </div>
+
+    <div class="result-card">
+        <span>约束 r_max / a</span>
+        <strong id="confinement">-</strong>
+    </div>
+
+    <div class="result-card">
+        <span>能量误差 (%)</span>
+        <strong id="energy-error">-</strong>
+    </div>
+
+    <div class="result-card">
+        <span>步数 / 总时间 (s)</span>
+        <strong id="steps-time">-</strong>
+    </div>
+
+</section>
+
+
+<!-- =========================================================
+     Three.js（本地化，可离线双击打开）
+     ========================================================= -->
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three/build/three.module.min.js",
+    "three/addons/": "./vendor/three/examples/jsm/"
+  }
+}
+</script>
+
+
+<!-- 纯前端物理引擎（浏览器本地计算，无需后端） -->
+<script src="./simulation.js"></script>
+
+
+<script type="module">
+
+    import * as THREE
+        from "three";
+
+
+    import { OrbitControls }
+        from "three/addons/controls/OrbitControls.js";
+
+
+    import { EffectComposer }
+        from "three/addons/postprocessing/EffectComposer.js";
+
+
+    import { RenderPass }
+        from "three/addons/postprocessing/RenderPass.js";
+
+
+    import { UnrealBloomPass }
+        from "three/addons/postprocessing/UnrealBloomPass.js";
+
+
+    // 本页面为纯前端版本：物理计算由 simulation.js 在浏览器本地完成，
+    // 无需后端。直接双击 index.html（file://）即可运行。
+
+    window.THREE = THREE;
+    window.OrbitControls = OrbitControls;
+    window.EffectComposer = EffectComposer;
+    window.RenderPass = RenderPass;
+    window.UnrealBloomPass = UnrealBloomPass;
+
+
+    const script = document.createElement("script");
+    script.src = "./script.js";
+
+    script.onload = function () {
+        console.log("script.js loaded.");
+        window.startSimulationApp();
+    };
+
+    script.onerror = function () {
+        console.error("Failed to load script.js");
+    };
+
+    document.body.appendChild(script);
+
+</script>
+
+
+</body>
+
+</html>
