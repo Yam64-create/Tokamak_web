@@ -195,7 +195,10 @@ function initializeThreeJS() {
 
     if (!THREE) { console.error("Three.js was not loaded."); return; }
     if (!OrbitControls) { console.error("OrbitControls was not loaded."); return; }
-    if (!window.EffectComposer || !window.RenderPass || !window.UnrealBloomPass) {
+    // ?bloom=0 关闭后处理：低配机 / 截图排查时直接用 renderer 渲染
+    const useBloom = !/[?&]bloom=0/.test(window.location.search);
+
+    if (useBloom && (!window.EffectComposer || !window.RenderPass || !window.UnrealBloomPass)) {
         console.error("Post-processing modules were not loaded."); return;
     }
 
@@ -325,16 +328,21 @@ function initializeThreeJS() {
     // Post-processing（Bloom 辉光）
     // --------------------------------------------------------
 
-    composer = new window.EffectComposer(renderer);
-    composer.addPass(new window.RenderPass(scene, camera));
+    if (useBloom) {
 
-    const bloomPass = new window.UnrealBloomPass(
-        new THREE.Vector2(width, height),
-        0.6,   // strength
-        0.45,  // radius
-        0.82   // threshold
-    );
-    composer.addPass(bloomPass);
+        composer = new window.EffectComposer(renderer);
+        composer.addPass(new window.RenderPass(scene, camera));
+
+        const bloomPass = new window.UnrealBloomPass(
+            new THREE.Vector2(width, height),
+            0.6,   // strength
+            0.45,  // radius
+            0.82   // threshold
+        );
+        composer.addPass(bloomPass);
+    } else {
+        console.log("Bloom 已关闭（?bloom=0），使用直出渲染。");
+    }
 
     // --------------------------------------------------------
     // Window resize
@@ -628,11 +636,17 @@ function buildGSFitScene(data, GSFIT) {
     tfCoilGroup = new THREE.Group();
 
     const nTF = 8;
-    const tfRadius = deviceA * 1.9;
 
     for (let i = 0; i < nTF; i++) {
-        const phi = 2 * Math.PI * i / nTF;
-        const ring = createVerticalRing(deviceR0, tfRadius, phi, 0.008, 0x2a3948);
+        const phi = 2 * Math.PI * (i + 0.5) / nTF;
+        const ring = createEllipticRing(
+            deviceR0,
+            deviceA * 1.06,
+            deviceA * 1.42,
+            phi,
+            deviceA * 0.02,
+            0x2a3948
+        );
         tfCoilGroup.add(ring);
     }
 
@@ -654,7 +668,7 @@ function buildAnalyticScene(data) {
     const vesselMat = new THREE.MeshPhysicalMaterial({
         color: 0x2a3f55,
         transparent: true,
-        opacity: 0.16,
+        opacity: 0.20,
         roughness: 0.4,
         metalness: 0.35,
         side: THREE.DoubleSide
@@ -668,9 +682,9 @@ function buildAnalyticScene(data) {
     const plasmaMat = new THREE.MeshStandardMaterial({
         color: 0xff5a3c,
         emissive: 0xff4422,
-        emissiveIntensity: 0.35,
+        emissiveIntensity: 0.45,
         transparent: true,
-        opacity: 0.22,
+        opacity: 0.30,
         roughness: 0.5,
         metalness: 0.1,
         side: THREE.DoubleSide
@@ -790,25 +804,28 @@ function createAnalyticFamily(kind, turns, R0, a) {
 
     const n = Math.max(1, Math.round(turns));
 
-    // ---------------- TF 环向场：立式环沿环向均布 ----------------
+    // ---------------- TF 环向场：沿环向均布、每匝环绕等离子体截面 ----------------
 
     if (kind === "tf") {
 
+        // 每一匝都是"套住"等离子体截面的闭合小环（椭圆近似），
+        // 沿环向均匀分布，整体读起来就是绕在大环上的一圈绕组
+        const halfR = a * 1.10;
+        const halfZ = a * 1.26;
+        const tube = a * 0.03;
+
         for (let i = 0; i < n; i++) {
-            const phi = 2 * Math.PI * i / n;
-            const ring = createVerticalRing(
-                0,
-                R0 + a * 1.15,
+
+            const phi = 2 * Math.PI * (i + 0.5) / n;
+
+            const ring = createEllipticRing(
+                R0,
+                halfR,
+                halfZ,
                 phi,
-                0.022,
+                tube,
                 style.color
             );
-
-            // 补一点自发光，避免背光侧完全看不见
-            if (ring.material) {
-                ring.material.emissive = new THREE.Color(style.color);
-                ring.material.emissiveIntensity = 0.18;
-            }
 
             group.add(ring);
         }
@@ -1225,6 +1242,52 @@ function createVerticalRing(centerR, radius, phi, tube, color) {
         color: color,
         metalness: 0.8,
         roughness: 0.3
+    });
+
+    return new THREE.Mesh(geo, mat);
+}
+
+
+// ============================================================
+// 椭圆截面环（套在等离子体截面外的一匝）
+//
+// 与 createVerticalRing 的区别：径向半宽 halfR 与竖直半高 halfZ
+// 可以不同，用来逼近拉长的托卡马克截面；环心在半径 centerR 处，
+// 因此每一匝都是"环绕等离子体管"的闭合环，而不是穿过机器轴的大圈。
+// ============================================================
+
+function createEllipticRing(centerR, halfR, halfZ, phi, tube, color) {
+
+    const THREE = window.THREE;
+
+    const cosP = Math.cos(phi);
+    const sinP = Math.sin(phi);
+
+    const points = [];
+    const seg = 128;
+
+    for (let i = 0; i <= seg; i++) {
+
+        const t = 2 * Math.PI * i / seg;
+
+        const rr = centerR + halfR * Math.cos(t);
+
+        points.push(new THREE.Vector3(
+            rr * cosP,
+            rr * sinP,
+            halfZ * Math.sin(t)
+        ));
+    }
+
+    const curve = new THREE.CatmullRomCurve3(points, true);
+    const geo = new THREE.TubeGeometry(curve, 128, tube, 8, true);
+
+    const mat = new THREE.MeshStandardMaterial({
+        color: color,
+        metalness: 0.8,
+        roughness: 0.3,
+        emissive: new THREE.Color(color),
+        emissiveIntensity: 0.18
     });
 
     return new THREE.Mesh(geo, mat);
