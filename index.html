@@ -295,6 +295,94 @@
         </div>
 
 
+        <div
+            id="analytic-coil-panel"
+            class="parameter-group"
+        >
+
+            <h3>
+                线圈示意 · COIL LAYOUT
+            </h3>
+
+            <p class="panel-hint">
+                解析模型专用：勾选显隐，右侧数字为匝数，改动立即重建线圈
+            </p>
+
+            <label class="check-row coil-row">
+                <input
+                    id="showTF"
+                    type="checkbox"
+                    checked
+                >
+                <span><i class="coil-dot" style="background:#8fb0d0"></i>TF 环向场</span>
+                <input
+                    id="turnsTF"
+                    type="number"
+                    value="16"
+                    min="1"
+                    max="32"
+                    step="1"
+                    title="TF 线圈个数"
+                >
+            </label>
+
+            <label class="check-row coil-row">
+                <input
+                    id="showCS"
+                    type="checkbox"
+                    checked
+                >
+                <span><i class="coil-dot" style="background:#c98a4a"></i>CS 中心螺线管</span>
+                <input
+                    id="turnsCS"
+                    type="number"
+                    value="6"
+                    min="1"
+                    max="24"
+                    step="1"
+                    title="CS 饼式线圈匝数"
+                >
+            </label>
+
+            <label class="check-row coil-row">
+                <input
+                    id="showPF"
+                    type="checkbox"
+                    checked
+                >
+                <span><i class="coil-dot" style="background:#d9b46a"></i>PF 极向场</span>
+                <input
+                    id="turnsPF"
+                    type="number"
+                    value="6"
+                    min="1"
+                    max="24"
+                    step="1"
+                    title="PF 上下对称线圈对数"
+                >
+            </label>
+
+            <label class="check-row coil-row">
+                <input
+                    id="showCC"
+                    type="checkbox"
+                    checked
+                >
+                <span><i class="coil-dot" style="background:#6fae9a"></i>CC 修正线圈</span>
+                <input
+                    id="turnsCC"
+                    type="number"
+                    value="4"
+                    min="1"
+                    max="24"
+                    step="1"
+                    title="CC 修正线圈对数"
+                >
+            </label>
+
+        </div>
+
+
         <button
             id="run-button"
             class="run-button"

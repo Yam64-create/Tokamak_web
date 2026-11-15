@@ -359,6 +359,89 @@ select:focus {
 
 
 /* ========================================================
+   解析模型线圈组（匝数输入）
+   ======================================================== */
+
+.panel-hint {
+
+    grid-column: 1 / -1;
+
+    margin: -2px 0 2px;
+
+    font-size: 10.5px;
+
+    line-height: 1.5;
+
+    color: #6f7d8b;
+}
+
+
+.coil-row span {
+
+    flex: 1 1 auto;
+}
+
+
+.coil-dot {
+
+    display: inline-block;
+
+    width: 8px;
+
+    height: 8px;
+
+    margin-right: 6px;
+
+    border-radius: 50%;
+
+    vertical-align: 1px;
+
+    box-shadow: 0 0 4px rgba(0, 0, 0, 0.6);
+}
+
+
+.coil-row input[type="number"] {
+
+    width: 54px;
+
+    height: 24px;
+
+    margin: 0 0 0 auto;
+
+    padding: 0 6px;
+
+    border: 1px solid #303a45;
+
+    border-radius: 4px;
+
+    background: #070b10;
+
+    color: #cfd9e2;
+
+    font-size: 11px;
+
+    text-align: center;
+
+    flex: 0 0 auto;
+}
+
+
+.coil-row input[type="number"]:focus {
+
+    outline: none;
+
+    border-color: #6fb7ff;
+}
+
+
+/* GSFit 模式下解析线圈控件不可用 */
+.is-muted {
+
+    opacity: 0.45;
+}
+
+
+/* ========================================================
    Buttons
    ======================================================== */
 

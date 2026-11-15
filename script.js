@@ -40,6 +40,20 @@ let gridHelper;
 // 绝缘护套显示开关（页面上可切换）
 let showInsulation = true;
 
+// 解析模型线圈组（TF 环向场 / CS 中心螺线管 / PF 极向场 / CC 修正线圈）
+// 每族线圈的匝数与显隐都可在页面上调整
+const ANALYTIC_COILS = {
+    tf: { label: "TF 环向场", turns: 16, visible: true },
+    cs: { label: "CS 中心螺线管", turns: 6, visible: true },
+    pf: { label: "PF 极向场", turns: 6, visible: true },
+    cc: { label: "CC 修正线圈", turns: 4, visible: true }
+};
+
+let analyticCoilGroup = null;          // 四族线圈的父节点
+let analyticFamilies = {};             // kind -> Group
+let analyticR0 = 0;
+let analyticA = 0;
+
 let trajectoryPoints = [];
 let times = [];
 
@@ -73,6 +87,9 @@ window.startSimulationApp = function () {
     setupViewButtons();
     setupFieldMode();
     setupDisplayToggles();
+    setupAnalyticCoilControls();
+    applyFieldModeFromUrl();
+    applyAnalyticCoilParamsFromUrl();
 
     // 首次进入自动跑一次，直接展示装置与轨迹
     setTimeout(runSimulation, 300);
@@ -452,6 +469,12 @@ function buildSceneGeometry(data) {
         fieldLineGroup.add(line);
     }
     scene.add(fieldLineGroup);
+
+    if (window.__tokamakDebug || /[?&]debug=1/.test(window.location.search)) {
+        console.log("场景对象：" + scene.children.map(function (o) {
+            return (o.name || o.type) + (o.visible ? "" : "(hidden)");
+        }).join(" | "));
+    }
 }
 
 
@@ -672,14 +695,249 @@ function buildAnalyticScene(data) {
     );
     scene.add(columnMesh);
 
-    tfCoilGroup = new THREE.Group();
-    const nTF = 8;
-    for (let i = 0; i < nTF; i++) {
-        const phi = 2 * Math.PI * i / nTF;
-        const ring = createVerticalRing(0, R0 + a * 1.15, phi, 0.025, 0x5a7fa0);
-        tfCoilGroup.add(ring);
+    // TF / CS / PF / CC 线圈示意（匝数可在页面「线圈示意」分组调整）
+    buildAnalyticCoilSets(R0, a);
+}
+
+
+// ============================================================
+// 解析模型线圈组：TF / CS / PF / CC
+//
+// 拓扑约定（R = 截面中心到机器轴的距离，Z = 高度）：
+//   TF 环向场     —— N 个立式环沿环向均布（N = 匝数）
+//   CS 中心螺线管 —— 绕中心柱上下堆叠的 N 个饼式线圈
+//   PF 极向场     —— 上下对称的 N 对环形线圈，半径随序号外扩
+//   CC 修正线圈   —— 靠近等离子体边界的小截面线圈，上下对称 N 对
+// 每族几何各合并成一个 BufferGeometry（一族一次 draw call）。
+// ============================================================
+
+const ANALYTIC_COIL_STYLE = {
+    tf: { color: 0x8fb0d0, metalness: 0.75, roughness: 0.35 },
+    cs: { color: 0xc98a4a, metalness: 0.85, roughness: 0.30 },
+    pf: { color: 0xd9b46a, metalness: 0.85, roughness: 0.28 },
+    cc: { color: 0x6fae9a, metalness: 0.70, roughness: 0.35 }
+};
+
+
+function buildAnalyticCoilSets(R0, a) {
+
+    const THREE = window.THREE;
+
+    analyticR0 = R0;
+    analyticA = a;
+
+    if (analyticCoilGroup) {
+        scene.remove(analyticCoilGroup);
+        disposeGroup(analyticCoilGroup);
     }
-    scene.add(tfCoilGroup);
+
+    analyticCoilGroup = new THREE.Group();
+    analyticFamilies = {};
+
+    scene.add(analyticCoilGroup);
+
+    rebuildAnalyticFamily("tf");
+    rebuildAnalyticFamily("cs");
+    rebuildAnalyticFamily("pf");
+    rebuildAnalyticFamily("cc");
+
+    // 取景范围要覆盖最外层 PF 线圈，否则会被裁到画面外
+    deviceOuter = Math.max(deviceOuter, R0 + a * 1.75);
+    deviceZmax = Math.max(deviceZmax, a * 1.15);
+}
+
+
+function rebuildAnalyticFamily(kind) {
+
+    if (!analyticCoilGroup) return;
+
+    const old = analyticFamilies[kind];
+
+    if (old) {
+        analyticCoilGroup.remove(old);
+        disposeGroup(old);
+    }
+
+    const state = ANALYTIC_COILS[kind];
+
+    const group = createAnalyticFamily(
+        kind,
+        state.turns,
+        analyticR0,
+        analyticA
+    );
+
+    group.visible = state.visible;
+
+    analyticCoilGroup.add(group);
+    analyticFamilies[kind] = group;
+
+    console.log(
+        state.label + " 重建：" + state.turns + " 匝 → " +
+        (group.userData.ringCount || 0) + " 个环形几何"
+    );
+}
+
+
+function createAnalyticFamily(kind, turns, R0, a) {
+
+    const THREE = window.THREE;
+
+    const style = ANALYTIC_COIL_STYLE[kind];
+
+    const group = new THREE.Group();
+    group.name = "analytic-coil-" + kind;
+
+    const n = Math.max(1, Math.round(turns));
+
+    // ---------------- TF 环向场：立式环沿环向均布 ----------------
+
+    if (kind === "tf") {
+
+        for (let i = 0; i < n; i++) {
+            const phi = 2 * Math.PI * i / n;
+            const ring = createVerticalRing(
+                0,
+                R0 + a * 1.15,
+                phi,
+                0.022,
+                style.color
+            );
+
+            // 补一点自发光，避免背光侧完全看不见
+            if (ring.material) {
+                ring.material.emissive = new THREE.Color(style.color);
+                ring.material.emissiveIntensity = 0.18;
+            }
+
+            group.add(ring);
+        }
+
+        group.userData.ringCount = n;
+
+        return group;
+    }
+
+    // 其余三族统一用矩形截面圆环，合并成一个 geometry
+
+    const rings = [];
+
+    if (kind === "cs") {
+
+        const colR = Math.max(a * 0.22, 0.05);
+        const span = a * 1.9;                 // 螺线管总高
+        const pitch = span / n;
+        const halfZ = Math.min(pitch * 0.42, a * 0.16);
+
+        for (let i = 0; i < n; i++) {
+            const z = -span * 0.5 + pitch * (i + 0.5);
+            rings.push({
+                R: colR * 1.35,
+                Z: z,
+                hr: colR * 0.42,
+                hz: halfZ
+            });
+        }
+    }
+
+    if (kind === "pf") {
+
+        for (let i = 0; i < n; i++) {
+            const frac = (i + 1) / (n + 1);
+            const Rp = R0 + a * (1.12 + 0.38 * frac);
+            const Zp = a * (0.92 - 0.32 * frac);
+            const hr = a * (0.09 + 0.05 * frac);
+            const hz = a * (0.08 + 0.04 * frac);
+
+            rings.push({ R: Rp, Z: Zp, hr: hr, hz: hz });
+            rings.push({ R: Rp, Z: -Zp, hr: hr, hz: hz });
+        }
+    }
+
+    if (kind === "cc") {
+
+        for (let i = 0; i < n; i++) {
+            const frac = (i + 1) / (n + 1);
+            const Rc = R0 + a * (1.02 + 0.12 * frac);
+            const Zc = a * (0.20 + 0.55 * frac);
+            const hr = a * 0.055;
+            const hz = a * 0.05;
+
+            rings.push({ R: Rc, Z: Zc, hr: hr, hz: hz });
+            rings.push({ R: Rc, Z: -Zc, hr: hr, hz: hz });
+        }
+    }
+
+    if (rings.length === 0) return group;
+
+    const mesh = new THREE.Mesh(
+        makeMergedRings(rings, 40),
+        new THREE.MeshStandardMaterial({
+            color: style.color,
+            metalness: style.metalness,
+            roughness: style.roughness,
+            emissive: new THREE.Color(style.color),
+            emissiveIntensity: 0.16
+        })
+    );
+
+    mesh.castShadow = true;
+    group.add(mesh);
+
+    group.userData.ringCount = rings.length;
+
+    return group;
+}
+
+
+function makeMergedRings(rings, segments) {
+
+    const THREE = window.THREE;
+
+    const positions = [];
+    const normals = [];
+    const indices = [];
+
+    for (let i = 0; i < rings.length; i++) {
+        const r = rings[i];
+        pushRingBox(
+            positions,
+            normals,
+            null,
+            indices,
+            r.R,
+            r.Z,
+            r.hr,
+            r.hz,
+            segments
+        );
+    }
+
+    const geo = new THREE.BufferGeometry();
+
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+    geo.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
+    geo.setIndex(indices);
+    geo.computeBoundingSphere();
+
+    return geo;
+}
+
+
+function disposeGroup(group) {
+
+    group.traverse(function (obj) {
+
+        if (obj.geometry) obj.geometry.dispose();
+
+        if (obj.material) {
+            if (Array.isArray(obj.material)) {
+                obj.material.forEach(function (m) { m.dispose(); });
+            } else {
+                obj.material.dispose();
+            }
+        }
+    });
 }
 
 
@@ -1116,6 +1374,13 @@ function removeSceneGeometry() {
         columnMesh = null;
     }
 
+    if (analyticCoilGroup) {
+        scene.remove(analyticCoilGroup);
+        disposeGroup(analyticCoilGroup);
+        analyticCoilGroup = null;
+        analyticFamilies = {};
+    }
+
 }
 
 
@@ -1368,8 +1633,138 @@ function setupDisplayToggles() {
 }
 
 
-function applyFieldMode() {
+// ============================================================
+// 解析模型线圈控制（TF / CS / PF / CC 的匝数 + 显隐）
+// ============================================================
 
+const ANALYTIC_COIL_KINDS = ["tf", "cs", "pf", "cc"];
+
+
+function setupAnalyticCoilControls() {
+
+    for (let i = 0; i < ANALYTIC_COIL_KINDS.length; i++) {
+
+        const kind = ANALYTIC_COIL_KINDS[i];
+        const KEY = kind.toUpperCase();
+
+        const showCb = document.getElementById("show" + KEY);
+        const turnsInput = document.getElementById("turns" + KEY);
+
+        if (!showCb || !turnsInput) continue;
+
+        const state = ANALYTIC_COILS[kind];
+
+        showCb.checked = state.visible;
+        turnsInput.value = state.turns;
+
+        showCb.addEventListener("change", function () {
+
+            state.visible = showCb.checked;
+
+            const fam = analyticFamilies[kind];
+            if (fam) fam.visible = state.visible;
+
+            console.log(state.label + "：" + (state.visible ? "显示" : "隐藏"));
+        });
+
+        const onTurns = function () {
+            applyAnalyticTurns(kind, turnsInput.value);
+        };
+
+        turnsInput.addEventListener("change", onTurns);
+        turnsInput.addEventListener("input", onTurns);
+    }
+}
+
+
+function applyAnalyticTurns(kind, rawValue) {
+
+    const maxTurns = (kind === "tf") ? 32 : 24;
+
+    let n = parseInt(rawValue, 10);
+
+    if (!isFinite(n)) n = ANALYTIC_COILS[kind].turns;
+
+    n = Math.min(maxTurns, Math.max(1, n));
+
+    const state = ANALYTIC_COILS[kind];
+
+    if (n === state.turns) return;
+
+    state.turns = n;
+
+    rebuildAnalyticFamily(kind);
+
+    console.log(
+        state.label + " 匝数：" + n +
+        (analyticCoilGroup ? "" : "（当前场景不是解析模型，切回并点 RUN 后生效）")
+    );
+}
+
+
+function setAnalyticCoilControlsEnabled(enabled) {
+    for (let i = 0; i < ANALYTIC_COIL_KINDS.length; i++) {
+
+        const KEY = ANALYTIC_COIL_KINDS[i].toUpperCase();
+
+        const showCb = document.getElementById("show" + KEY);
+        const turnsInput = document.getElementById("turns" + KEY);
+
+        if (showCb) showCb.disabled = !enabled;
+        if (turnsInput) turnsInput.disabled = !enabled;
+    }
+
+    const panel = document.getElementById("analytic-coil-panel");
+    if (panel) panel.classList.toggle("is-muted", !enabled);
+}
+
+
+// 支持用 URL 参数直接指定数据源：index.html?mode=analytic / ?mode=gsfit
+function applyFieldModeFromUrl() {
+
+    const mode = new URLSearchParams(window.location.search).get("mode");
+
+    if (mode !== "gsfit" && mode !== "analytic") return;
+
+    const select = document.getElementById("fieldMode");
+
+    if (!select) return;
+
+    select.value = mode;
+
+    applyFieldMode();
+
+    console.log("数据源由 URL 参数指定：" + mode);
+}
+
+
+// 支持用 URL 参数直接指定解析模型线圈匝数：?tf=12&cs=4&pf=3&cc=2
+function applyAnalyticCoilParamsFromUrl() {
+
+    const params = new URLSearchParams(window.location.search);
+
+    for (let i = 0; i < ANALYTIC_COIL_KINDS.length; i++) {
+
+        const kind = ANALYTIC_COIL_KINDS[i];
+
+        const raw = params.get(kind);
+
+        if (!raw) continue;
+
+        const n = parseInt(raw, 10);
+
+        if (!isFinite(n)) continue;
+
+        ANALYTIC_COILS[kind].turns = Math.min(24, Math.max(1, n));
+
+        const input = document.getElementById("turns" + kind.toUpperCase());
+
+        if (input) input.value = ANALYTIC_COILS[kind].turns;
+    }
+}
+
+
+function applyFieldMode() {
     const select = document.getElementById("fieldMode");
     const mode = select ? select.value : "analytic";
 
@@ -1417,6 +1812,9 @@ function applyFieldMode() {
             rSurfInput.value = (aNow * 0.5).toFixed(4);
         }
     }
+
+    // 解析模型的 TF/CS/PF/CC 线圈只在解析模式下存在，GSFit 模式下禁用控件
+    setAnalyticCoilControlsEnabled(!(mode === "gsfit" && window.GSFIT_DATA));
 }
 
 
