@@ -311,6 +311,54 @@ select:focus {
 
 
 /* ========================================================
+   显示开关（复选框行）
+   ======================================================== */
+
+.check-row {
+
+    grid-column: 1 / -1;
+
+    flex-direction: row;
+
+    align-items: center;
+
+    gap: 8px;
+
+    padding: 8px 10px;
+
+    border: 1px solid #303a45;
+
+    border-radius: 5px;
+
+    background: #0b1016;
+
+    font-size: 11px;
+
+    color: #9aa8b6;
+
+    cursor: pointer;
+}
+
+
+.check-row input {
+
+    width: 14px;
+
+    height: 14px;
+
+    margin: 0;
+
+    padding: 0;
+
+    flex: 0 0 auto;
+
+    accent-color: #6fb7ff;
+
+    cursor: pointer;
+}
+
+
+/* ========================================================
    Buttons
    ======================================================== */
 

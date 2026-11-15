@@ -28,6 +28,7 @@ let trajectoryLine;
 let fieldLineGroup;
 let surfaceGroup;
 let coilMesh;
+let insulationMesh;
 let vesselMesh;
 let plasmaMesh;
 let tfCoilGroup;
@@ -35,6 +36,9 @@ let axisRing;
 let columnMesh;
 let floorMesh;
 let gridHelper;
+
+// 绝缘护套显示开关（页面上可切换）
+let showInsulation = true;
 
 let trajectoryPoints = [];
 let times = [];
@@ -68,6 +72,7 @@ window.startSimulationApp = function () {
     setupButtons();
     setupViewButtons();
     setupFieldMode();
+    setupDisplayToggles();
 
     // 首次进入自动跑一次，直接展示装置与轨迹
     setTimeout(runSimulation, 300);
@@ -106,6 +111,66 @@ function initGSFitData() {
 // Initialize Three.js
 // ============================================================
 
+// ============================================================
+// 程序化影棚环境贴图（equirectangular）
+// PBR 金属没有环境反射会像塑料，这里用 canvas 现画一张：
+// 上亮下暗的天光渐变 + 两块柔光箱，供铜导体反射。
+// ============================================================
+
+function createStudioEnvironment() {
+
+    const THREE = window.THREE;
+
+    const w = 1024;
+    const h = 512;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+
+    const ctx = canvas.getContext("2d");
+
+    const sky = ctx.createLinearGradient(0, 0, 0, h);
+    sky.addColorStop(0.00, "#eaf2ff");
+    sky.addColorStop(0.42, "#93a8bf");
+    sky.addColorStop(0.56, "#3a4655");
+    sky.addColorStop(1.00, "#0a0d12");
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, w, h);
+
+    function softbox(cx, cy, rx, ry, alpha) {
+
+        const r = Math.max(rx, ry);
+
+        const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+        g.addColorStop(0, "rgba(255,255,255," + alpha + ")");
+        g.addColorStop(0.6, "rgba(255,255,255," + (alpha * 0.35) + ")");
+        g.addColorStop(1, "rgba(255,255,255,0)");
+
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.scale(rx / r, ry / r);
+        ctx.translate(-cx, -cy);
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+    }
+
+    softbox(w * 0.22, h * 0.18, 230, 130, 0.95);
+    softbox(w * 0.68, h * 0.26, 180, 100, 0.65);
+    softbox(w * 0.90, h * 0.34, 120, 70, 0.45);
+
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.mapping = THREE.EquirectangularReflectionMapping;
+    if (THREE.SRGBColorSpace) tex.colorSpace = THREE.SRGBColorSpace;
+    tex.needsUpdate = true;
+
+    return tex;
+}
+
+
 function initializeThreeJS() {
 
     const THREE = window.THREE;
@@ -129,6 +194,9 @@ function initializeThreeJS() {
 
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0x04060a);
+
+    // 程序化环境贴图：让铜导体与绝缘护套有真实的反射/高光层次
+    scene.environment = createStudioEnvironment();
 
     // 调试句柄（控制台可直接查看场景对象）
     window.__tokamak = {
@@ -416,18 +484,43 @@ function buildGSFitScene(data, GSFIT) {
 
     const coilGeo = buildCoilGeometry(GSFIT.coils);
 
+    // 写实铜导体：高金属度 + 低粗糙度 + 环境反射
     coilMesh = new THREE.Mesh(
         coilGeo,
         new THREE.MeshStandardMaterial({
             vertexColors: true,
-            metalness: 0.85,
-            roughness: 0.32,
-            emissive: 0x101820,
-            emissiveIntensity: 0.25
+            metalness: 0.92,
+            roughness: 0.34,
+            envMapIntensity: 1.25
         })
     );
     coilMesh.castShadow = true;
     scene.add(coilMesh);
+
+    // --------------------------------------------------------
+    // 绝缘护套（包裹每组绕组，半透明环氧）
+    // --------------------------------------------------------
+
+    const insGeo = buildInsulationGeometry(GSFIT.coils);
+
+    insulationMesh = new THREE.Mesh(
+        insGeo,
+        new THREE.MeshPhysicalMaterial({
+            color: 0xd9e2e8,
+            metalness: 0.0,
+            roughness: 0.28,
+            clearcoat: 0.6,
+            clearcoatRoughness: 0.18,
+            transparent: true,
+            opacity: 0.16,
+            side: THREE.DoubleSide,
+            depthWrite: false,
+            envMapIntensity: 1.4
+        })
+    );
+    insulationMesh.visible = showInsulation;
+    insulationMesh.renderOrder = 2;
+    scene.add(insulationMesh);
 
     // --------------------------------------------------------
     // 磁面（5 层嵌套闭合面）
@@ -598,33 +691,91 @@ function buildAnalyticScene(data) {
 // ============================================================
 
 const COIL_COLORS = {
-    BVLB: [0.55, 0.72, 1.00],
-    BVLT: [0.55, 0.72, 1.00],
-    BVUB: [0.32, 0.55, 0.86],
-    BVUT: [0.32, 0.55, 0.86],
-    DIVB: [1.00, 0.55, 0.22],
-    DIVT: [1.00, 0.55, 0.22],
-    MCB:  [0.20, 0.80, 0.50],
-    MCT:  [0.20, 0.80, 0.50],
-    PSHB: [0.55, 0.57, 0.60],
-    PSHT: [0.55, 0.57, 0.60],
-    SOL:  [0.15, 0.78, 0.72]
+    BVLB: [0.82, 0.55, 0.30],
+    BVLT: [0.82, 0.55, 0.30],
+    BVUB: [0.70, 0.44, 0.22],
+    BVUT: [0.70, 0.44, 0.22],
+    DIVB: [0.90, 0.65, 0.38],
+    DIVT: [0.90, 0.65, 0.38],
+    MCB:  [0.62, 0.45, 0.28],
+    MCT:  [0.62, 0.45, 0.28],
+    PSHB: [0.58, 0.52, 0.46],
+    PSHT: [0.58, 0.52, 0.46],
+    SOL:  [0.72, 0.45, 0.22]
 };
+
+
+// ============================================================
+// 矩形截面环形导体（真实绕组的一匝）
+//
+// 截面 = 径向 dR × 竖直 dZ 的矩形，绕 Z 轴回转成分段圆环；
+// positions / normals / indices 累加进调用方的数组，colors 可空。
+// ============================================================
+
+function pushRingBox(positions, normals, colors, indices,
+                     centerR, centerZ, halfR, halfZ, segments, color) {
+
+    // 矩形截面四个角点（逆时针：外下-外上-内上-内下）
+    const prof = [
+        [centerR + halfR, centerZ - halfZ],
+        [centerR + halfR, centerZ + halfZ],
+        [centerR - halfR, centerZ + halfZ],
+        [centerR - halfR, centerZ - halfZ]
+    ];
+
+    const baseVertex = positions.length / 3;
+
+    for (let e = 0; e < 4; e++) {
+
+        const p0 = prof[e];
+        const p1 = prof[(e + 1) % 4];
+
+        // 该截面边的外法向（R-Z 平面内，垂直于截面边）
+        let nr = p1[1] - p0[1];
+        let nz = -(p1[0] - p0[0]);
+
+        const nlen = Math.sqrt(nr * nr + nz * nz) || 1;
+        nr /= nlen;
+        nz /= nlen;
+
+        for (let i = 0; i <= segments; i++) {
+
+            const phi = 2 * Math.PI * i / segments;
+            const c = Math.cos(phi);
+            const s = Math.sin(phi);
+
+            positions.push(p0[0] * c, p0[0] * s, p0[1]);
+            normals.push(nr * c, nr * s, nz);
+            if (colors) colors.push(color[0], color[1], color[2]);
+
+            positions.push(p1[0] * c, p1[0] * s, p1[1]);
+            normals.push(nr * c, nr * s, nz);
+            if (colors) colors.push(color[0], color[1], color[2]);
+        }
+
+        const edgeBase = baseVertex + e * (segments + 1) * 2;
+
+        for (let i = 0; i < segments; i++) {
+
+            const k = edgeBase + i * 2;
+
+            indices.push(k, k + 2, k + 3);
+            indices.push(k, k + 3, k + 1);
+        }
+    }
+}
 
 
 function buildCoilGeometry(coils) {
 
     const THREE = window.THREE;
 
-    const TUBULAR = 36;   // 环向分段
-    const RADIAL = 5;     // 管截面分段
+    const SEGMENTS = 40;   // 环向分段
 
     const positions = [];
     const normals = [];
     const colors = [];
     const indices = [];
-
-    let base = 0;
 
     for (let g = 0; g < coils.length; g++) {
 
@@ -633,69 +784,19 @@ function buildCoilGeometry(coils) {
         let col = COIL_COLORS[group.name];
 
         if (!col) {
-            col = (group.current > 0) ? [1.00, 0.62, 0.28] : [0.42, 0.70, 1.00];
+            col = (group.current > 0) ? [0.86, 0.62, 0.34] : [0.66, 0.50, 0.34];
         }
 
         for (let f = 0; f < group.filaments.length; f++) {
 
             const fil = group.filaments[f];
 
-            const R = fil[0];
-            const Z = fil[1];
-            const dR = fil[2];
-            const dZ = fil[3];
+            // 真实绕组尺寸：径向 dR、竖直 dZ 的矩形导体
+            const halfR = Math.max(fil[2] * 0.5, 0.0025);
+            const halfZ = Math.max(fil[3] * 0.5, 0.0025);
 
-            // 管径：沿截面较窄的方向，限制在 3.5 mm ~ 9 mm
-            const tube = Math.min(
-                Math.max(Math.min(dR, dZ) * 0.5, 0.0035),
-                0.009
-            );
-
-            for (let i = 0; i < TUBULAR; i++) {
-
-                const th = 2 * Math.PI * i / TUBULAR;
-
-                const cx = R * Math.cos(th);
-                const cy = R * Math.sin(th);
-
-                const rx = Math.cos(th);
-                const ry = Math.sin(th);
-
-                for (let k = 0; k < RADIAL; k++) {
-
-                    const al = 2 * Math.PI * k / RADIAL;
-                    const ca = Math.cos(al);
-                    const sa = Math.sin(al);
-
-                    const nx = rx * ca;
-                    const ny = ry * ca;
-                    const nz = sa;
-
-                    positions.push(cx + nx * tube, cy + ny * tube, Z + nz * tube);
-                    normals.push(nx, ny, nz);
-                    colors.push(col[0], col[1], col[2]);
-                }
-            }
-
-            for (let i = 0; i < TUBULAR; i++) {
-
-                const i2 = (i + 1) % TUBULAR;
-
-                for (let k = 0; k < RADIAL; k++) {
-
-                    const k2 = (k + 1) % RADIAL;
-
-                    const a0 = base + i * RADIAL + k;
-                    const b0 = base + i * RADIAL + k2;
-                    const c0 = base + i2 * RADIAL + k2;
-                    const d0 = base + i2 * RADIAL + k;
-
-                    indices.push(a0, b0, c0);
-                    indices.push(a0, c0, d0);
-                }
-            }
-
-            base += TUBULAR * RADIAL;
+            pushRingBox(positions, normals, colors, indices,
+                        fil[0], fil[1], halfR, halfZ, SEGMENTS, col);
         }
     }
 
@@ -704,6 +805,67 @@ function buildCoilGeometry(coils) {
     geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
     geo.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
     geo.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+    geo.setIndex(indices);
+    geo.computeBoundingSphere();
+
+    return geo;
+}
+
+
+// ============================================================
+// 绝缘护套几何（矩形截面环形外壳，半透明）
+//
+// 真实 PF/TF 线圈是"多匝矩形导体 + 环氧浇注绝缘"：
+//   - 导体匝：按 GSFit 给出的 dR × dZ 建矩形截面圆环；
+//   - 绝缘层：每根导体外再包一层同构的薄壳，径向/竖直各外扩
+//     INSULATION_MARGIN（默认 3.5 mm，像匝间绝缘/环氧包覆），
+//     整层合成一个半透明材质、一次 draw call。
+// ============================================================
+
+const INSULATION_MARGIN = 0.0035;   // 护套超出导体表面的厚度 (m)
+
+function buildInsulationGeometry(coils) {
+
+    const THREE = window.THREE;
+
+    const SEGMENTS = 32;
+
+    const positions = [];
+    const normals = [];
+    const indices = [];
+
+    for (let g = 0; g < coils.length; g++) {
+
+        const group = coils[g];
+        const filaments = group.filaments;
+
+        if (!filaments || filaments.length === 0) continue;
+
+        for (let f = 0; f < filaments.length; f++) {
+
+            const fil = filaments[f];
+
+            const halfR = Math.max(fil[2] * 0.5, 0.0025) + INSULATION_MARGIN;
+            const halfZ = Math.max(fil[3] * 0.5, 0.0025) + INSULATION_MARGIN;
+
+            pushRingBox(
+                positions,
+                normals,
+                null,
+                indices,
+                fil[0],
+                fil[1],
+                halfR,
+                halfZ,
+                SEGMENTS
+            );
+        }
+    }
+
+    const geo = new THREE.BufferGeometry();
+
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+    geo.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
     geo.setIndex(indices);
     geo.computeBoundingSphere();
 
@@ -922,6 +1084,11 @@ function removeSceneGeometry() {
     if (coilMesh) {
         disposeMesh(coilMesh);
         coilMesh = null;
+    }
+
+    if (insulationMesh) {
+        disposeMesh(insulationMesh);
+        insulationMesh = null;
     }
 
     if (vesselMesh) {
@@ -1173,6 +1340,31 @@ function setupFieldMode() {
     }
 
     applyFieldMode();
+}
+
+
+// ============================================================
+// 显示开关（绝缘护套显示 / 隐藏）
+// ============================================================
+
+function setupDisplayToggles() {
+
+    const cb = document.getElementById("toggleInsulation");
+
+    if (!cb) return;
+
+    cb.checked = showInsulation;
+
+    cb.addEventListener("change", function () {
+
+        showInsulation = cb.checked;
+
+        if (insulationMesh) {
+            insulationMesh.visible = showInsulation;
+        }
+
+        console.log("绝缘护套：" + (showInsulation ? "显示" : "隐藏"));
+    });
 }
 
 
