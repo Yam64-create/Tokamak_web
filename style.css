@@ -204,6 +204,112 @@ input:focus {
 }
 
 
+select {
+
+    width: 100%;
+
+    padding: 9px;
+
+    border-radius: 5px;
+
+    border:
+        1px solid #303a45;
+
+    background: #0b1016;
+
+    color: #e8edf3;
+
+    outline: none;
+
+    font-family: inherit;
+}
+
+
+select:focus {
+
+    border-color: #4a7ba5;
+}
+
+
+/* GSFit 数据信息块 */
+
+.data-info {
+
+    padding: 10px 12px;
+
+    border-left:
+        2px solid #4a7ba5;
+
+    border-radius: 4px;
+
+    background: #0e151d;
+
+    font-size: 11px;
+
+    line-height: 1.75;
+
+    color: #8fa6ba;
+}
+
+
+.data-info div {
+
+    white-space: nowrap;
+
+    overflow: hidden;
+
+    text-overflow: ellipsis;
+}
+
+
+/* 线圈图例 */
+
+.coil-legend {
+
+    display: flex;
+
+    flex-wrap: wrap;
+
+    gap: 4px 10px;
+
+    margin-top: 8px;
+
+    padding-top: 8px;
+
+    border-top: 1px dashed #24313d;
+
+    white-space: normal;
+
+    overflow: visible;
+}
+
+
+.coil-chip {
+
+    display: inline-flex;
+
+    align-items: center;
+
+    gap: 5px;
+
+    font-size: 10px;
+
+    color: #9aabbb;
+}
+
+
+.coil-chip i {
+
+    display: inline-block;
+
+    width: 9px;
+
+    height: 9px;
+
+    border-radius: 50%;
+}
+
+
 /* ========================================================
    Buttons
    ======================================================== */

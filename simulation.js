@@ -3,24 +3,44 @@
 //
 // 本文件在浏览器本地完成全部物理计算，不依赖任何后端。
 //
-// 磁场模型（托卡马克轴对称场）：
-//   环向场 B_phi(R) = B0 * R0 / R          （1/R 衰减，环形场线圈产生）
-//   极向场 B_theta(r)= Bp0 * r / a         （等离子体电流产生）
-//        Bp0 = (a/R0) * B0 / q             （由安全因子 q 导出）
-//   总磁场 B = B_phi * phi_hat + B_theta * theta_hat
+// 两种磁场模式（params.mode）：
 //
-// 坐标：圆柱坐标 (R, phi, Z)，R = sqrt(x^2+y^2)，磁轴在 (R0, 0)。
-// 粒子运动：洛伦兹力 a = (q/m)(v × B)，四阶 Runge-Kutta 积分。
+//   1) "gsfit"    GSFit 重建的真实磁场（ST40 shot 12050 @130 ms）
+//        环向场 B_phi(R) = R0_TF * B_phi0 / R
+//        极向场 B_R = -(1/(2πR)) dpsi/dZ,  B_Z = +(1/(2πR)) dpsi/dR
+//        psi 是 GSFit 逆平衡重建得到的总极向磁通（含线圈+等离子体）
+//        psi 网格外用 PF 线圈（364 根 filament）毕奥-萨伐尔补
 //
-// 用法（浏览器）：
-//   runTokamakSimulation(params)
-//   返回 { success:true, data:{...} } 或 { success:false, error:"..." }
+//   2) "analytic" 旧的解析示意模型
+//        B_phi = B0*R0/R,  B_theta = Bp0*r/a
 //
-// 本文件是普通脚本（非 module），在浏览器中定义全局函数；
-// 同时支持 Node require 以便离线验证。
+// 坐标：圆柱 (R, phi, Z)，R = sqrt(x²+y²)，磁轴在 (axisR, axisZ)。
+// 粒子：洛伦兹力 a = (q/m)(v × B)，四阶 Runge-Kutta。
+//
+// 用法：
+//   runTokamakSimulation(params) -> { positions, times, field_lines, ... }
 // ============================================================
 
 var MU0 = 4 * Math.PI * 1e-7;
+
+// 当前磁场模式（由 runTokamakSimulation 设置）
+var activeMode = "analytic";
+
+
+// ============================================================
+// GSFit 磁场模块的取用（浏览器 window.GSFitField / Node globalThis）
+// ============================================================
+
+function getGSFitField() {
+
+    var root = (typeof globalThis !== "undefined") ? globalThis : null;
+
+    if (root && root.GSFitField && root.GSFitField.isLoaded && root.GSFitField.isLoaded()) {
+        return root.GSFitField;
+    }
+
+    return null;
+}
 
 
 // ============================================================
@@ -38,17 +58,24 @@ function cylindricalFromCartesian(x, y, z) {
 // ============================================================
 // 托卡马克磁场（笛卡尔分量）
 //
-// 输入点 (x,y,z)，输出 B = [Bx, By, Bz]
+// gsfit 模式：直接取 GSFitField
+// analytic 模式：解析 TF + 线性极向场
 // ============================================================
 
 function tokamakField(x, y, z, R0, a, B0, qFactor) {
+
+    var GF = getGSFitField();
+
+    if (activeMode === "gsfit" && GF) {
+        return GF.field(x, y, z);
+    }
 
     var cy = cylindricalFromCartesian(x, y, z);
     var R = cy.R;
     var phi = cy.phi;
     var Z = cy.Z;
 
-    // 极小半径（离磁轴距离），磁轴在 (R0, Z=0)
+    // 极小半径（离磁轴距离），磁轴在 (R0, 0)
     var dR = R - R0;
     var r = Math.sqrt(dR * dR + Z * Z);
 
@@ -60,9 +87,6 @@ function tokamakField(x, y, z, R0, a, B0, qFactor) {
     var Btheta = Bp0 * (r / a);
 
     // 极向单位方向（在 R-Z 平面内绕磁轴）：theta_hat = phi_hat × r_hat
-    //   在圆柱分量 (eR, ephi, eZ) 下：
-    //     theta_R  =  Z / r
-    //     theta_Z  = -(R - R0) / r
     var thetaR;
     var thetaZ;
 
@@ -74,14 +98,9 @@ function tokamakField(x, y, z, R0, a, B0, qFactor) {
         thetaZ = -(R - R0) / r;
     }
 
-    // 磁场圆柱分量
     var BR = Btheta * thetaR;
     var BZ = Btheta * thetaZ;
 
-    // 转换到笛卡尔：
-    //   eR = (cosφ, sinφ, 0)
-    //   phi_hat = (-sinφ, cosφ, 0)
-    //   eZ = (0, 0, 1)
     var cosP = Math.cos(phi);
     var sinP = Math.sin(phi);
 
@@ -118,7 +137,6 @@ function acceleration(
         qFactor
     );
 
-    // a = (q/m)(v × B)
     var qm = charge / mass;
 
     var ax = qm * (velocity[1] * B[2] - velocity[2] * B[1]);
@@ -231,70 +249,76 @@ function rk4Step(
 
 
 // ============================================================
-// 在初始位置处把 (vPar, vPerp) 构造成三维速度
+// 在发射点把 (vPar, vPerp) 构造成三维速度
 //   平行分量沿局部磁场 B_hat
-//   垂直分量沿极向切线方向（初始时上下竖直）
+//   垂直分量取 e_Z 在垂直 B 平面上的投影
 // ============================================================
 
 function buildInitialVelocity(
     R0, a, B0, qFactor,
-    rSurf, vPar, vPerp
+    rSurf, vPar, vPerp, axisZ
 ) {
 
-    // 发射点：外中平面 (R0 + rSurf, 0, 0)，phi = 0
+    var zStart = axisZ || 0;
+
     var px = R0 + rSurf;
     var py = 0;
-    var pz = 0;
+    var pz = zStart;
 
     var B = tokamakField(px, py, pz, R0, a, B0, qFactor);
     var bMag = Math.sqrt(B[0] * B[0] + B[1] * B[1] + B[2] * B[2]);
+
+    if (!(bMag > 0)) {
+        throw new Error("发射点磁场为零，无法构造初速度。");
+    }
 
     var bx = B[0] / bMag;
     var by = B[1] / bMag;
     var bz = B[2] / bMag;
 
-    // 极向切线方向（在发射点 = -eZ，即竖直向下）
-    // 归一化，确保与 B_hat 正交
+    // 垂直试探方向 e_Z
     var ex = 0;
     var ey = 0;
-    var ez = -1;
+    var ez = 1;
 
-    // 与 B_hat 正交化
     var dot = bx * ex + by * ey + bz * ez;
+
     ex -= dot * bx;
     ey -= dot * by;
-    ez -= dot * ez;
+    ez -= dot * bz;
 
     var eMag = Math.sqrt(ex * ex + ey * ey + ez * ez);
 
-    if (eMag < 1e-12) {
-        // 极端情况：磁场竖直，选一个任意垂直方向
-        ex = 1; ey = 0; ez = 0;
-        eMag = 1;
+    if (eMag < 1e-6) {
+        // 磁场几乎竖直：换 e_R
+        ex = 1;
+        ey = 0;
+        ez = 0;
+        dot = bx;
+        ex -= dot * bx;
+        ey -= dot * by;
+        ez -= dot * bz;
+        eMag = Math.sqrt(ex * ex + ey * ey + ez * ez);
     }
 
     ex /= eMag;
     ey /= eMag;
     ez /= eMag;
 
-    var vx = vPar * bx + vPerp * ex;
-    var vy = vPar * by + vPerp * ey;
-    var vz = vPar * bz + vPerp * ez;
-
     return {
-        velocity: [vx, vy, vz],
-        bMag: bMag,
-        bx: bx, by: by, bz: bz,
-        Bphi: B[1] / Math.max(bMag, 1e-30) * 0 // placeholder unused
+        velocity: [
+            vPar * bx + vPerp * ex,
+            vPar * by + vPerp * ey,
+            vPar * bz + vPerp * ez
+        ],
+        position: [px, py, pz],
+        bMag: bMag
     };
 }
 
 
 // ============================================================
-// 追踪磁面上的磁场螺旋线（用于可视化）
-//
-// 返回若干条螺旋线，每条为 [[x,y,z], ...]，
-// 沿磁场方向积分，覆盖 fieldTurns 个环向圈。
+// 追踪磁力线（可视化）
 // ============================================================
 
 function traceFieldLines(
@@ -304,10 +328,37 @@ function traceFieldLines(
 
     var lines = [];
 
-    // 磁面周长（一个环向圈的弧长 ≈ 2πR0）
+    // ---------- gsfit：沿真实磁场积分 ----------
+    var GF = getGSFitField();
+
+    if (activeMode === "gsfit" && GF) {
+
+        var stepSize = 0.004;
+        var maxSteps = Math.max(
+            200,
+            Math.round(2 * Math.PI * R0 * fieldTurns / stepSize)
+        );
+
+        for (var li = 0; li < numLines; li++) {
+
+            var phi0 = 2 * Math.PI * li / numLines;
+            var Rl = R0 + rSurf;
+
+            var start = [
+                Rl * Math.cos(phi0),
+                Rl * Math.sin(phi0),
+                0
+            ];
+
+            lines.push(GF.traceLine(start, stepSize, maxSteps));
+        }
+
+        return lines;
+    }
+
+    // ---------- analytic：沿解析场积分 ----------
     var circumference = 2 * Math.PI * R0;
 
-    // 每圈采样点数
     var pointsPerTurn = 240;
     var totalPoints = Math.max(
         60,
@@ -316,23 +367,19 @@ function traceFieldLines(
 
     var ds = circumference / pointsPerTurn;
 
-    for (var li = 0; li < numLines; li++) {
+    for (var lj = 0; lj < numLines; lj++) {
 
-        // 起始环向角，让多条螺旋线在环向上错开
-        var phi0 = 2 * Math.PI * li / numLines;
+        var phiStart = 2 * Math.PI * lj / numLines;
 
-        var px = (R0 + rSurf) * Math.cos(phi0);
-        var py = (R0 + rSurf) * Math.sin(phi0);
+        var px = (R0 + rSurf) * Math.cos(phiStart);
+        var py = (R0 + rSurf) * Math.sin(phiStart);
         var pz = 0;
 
         var pts = [[px, py, pz]];
 
         for (var i = 0; i < totalPoints; i++) {
 
-            var dir = tokamakFieldUnit(
-                px, py, pz,
-                R0, a, B0, qFactor
-            );
+            var dir = tokamakFieldUnit(px, py, pz, R0, a, B0, qFactor);
 
             px += dir[0] * ds;
             py += dir[1] * ds;
@@ -355,43 +402,87 @@ function traceFieldLines(
 function runTokamakSimulation(params) {
 
     // --------------------------------------------------------
-    // 读取参数
+    // 模式
     // --------------------------------------------------------
 
-    var R0       = Number(params["R0"]);
-    var a        = Number(params["a"]);
-    var B0       = Number(params["B0"]);
-    var qFactor  = Number(params["q"]);
+    activeMode = (params["mode"] === "gsfit") ? "gsfit" : "analytic";
 
-    var charge   = Number(params["qCharge"]);
-    var mass     = Number(params["m"]);
+    var GF = (activeMode === "gsfit") ? getGSFitField() : null;
 
-    var rSurf    = Number(params["rSurf"]);
-    var vPar     = Number(params["vPar"]);
-    var vPerp    = Number(params["vPerp"]);
+    if (activeMode === "gsfit" && !GF) {
+        throw new Error(
+            "GSFit 数据未加载：请确认 gsfit_data.js 与 gsfit_field.js 已引入。"
+        );
+    }
+
+    // --------------------------------------------------------
+    // 装置几何
+    // --------------------------------------------------------
+
+    var gsfitInfo = null;
+    var axisZ = 0;
+
+    if (GF) {
+
+        var gd = GF.getData();
+        var eq = gd.equilibrium;
+
+        gsfitInfo = {
+            machine: gd.meta.machine,
+            pulse: gd.meta.pulse,
+            timeMs: gd.meta.time_ms,
+            axisR: eq.axisR,
+            axisZ: eq.axisZ,
+            aLCFS: eq.aLCFS,
+            ip: eq.ip,
+            filaments: gd.coils.reduce(function (s, c) { return s + c.n; }, 0),
+            groups: gd.coils.length
+        };
+
+        axisZ = eq.axisZ;
+    }
+
+    var R0 = Number(params["R0"]);
+    var a = Number(params["a"]);
+    var B0 = Number(params["B0"]);
+    var qFactor = Number(params["q"]);
+
+    if (GF) {
+        // GSFit 模式下几何由数据决定，输入框仅作显示
+        R0 = gsfitInfo.axisR;
+        a = gsfitInfo.aLCFS;
+        B0 = GF.bToroidal(R0);   // 磁轴处环向场
+        qFactor = Number(params["q"]) > 0 ? Number(params["q"]) : 1.0;
+    }
+
+    var charge = Number(params["qCharge"]);
+    var mass = Number(params["m"]);
+
+    var rSurf = Number(params["rSurf"]);
+    var vPar = Number(params["vPar"]);
+    var vPerp = Number(params["vPerp"]);
 
     var toroidalTurns = Number(params["toroidalTurns"]);
-    var stepsPerGyro  = Number(params["stepsPerGyro"]);
+    var stepsPerGyro = Number(params["stepsPerGyro"]);
 
     // --------------------------------------------------------
     // 校验
     // --------------------------------------------------------
 
-    if (!(R0 > 0))          throw new Error("大半径 R0 必须大于 0。");
-    if (!(a > 0))           throw new Error("小半径 a 必须大于 0。");
-    if (!(B0 > 0))          throw new Error("环向磁场 B0 必须大于 0。");
-    if (!(qFactor > 0))     throw new Error("安全因子 q 必须大于 0。");
-    if (!(mass > 0))        throw new Error("质量 m 必须大于 0。");
-    if (charge === 0)       throw new Error("电荷 q 不能为 0。");
+    if (!(R0 > 0)) throw new Error("大半径 R0 必须大于 0。");
+    if (!(a > 0)) throw new Error("小半径 a 必须大于 0。");
+    if (!(B0 > 0)) throw new Error("环向磁场 B0 必须大于 0。");
+    if (!(mass > 0)) throw new Error("质量 m 必须大于 0。");
+    if (charge === 0) throw new Error("电荷 q 不能为 0。");
 
-    if (!(rSurf >= 0))      throw new Error("初始小半径 r0 不能为负。");
-    if (rSurf >= a)         throw new Error("初始小半径 r0 必须在真空室（r0 < a）内。");
+    if (!(rSurf >= 0)) throw new Error("初始小半径 r0 不能为负。");
+    if (rSurf >= a) throw new Error("初始小半径 r0 必须在真空室（r0 < a）内。");
 
     var speed = Math.sqrt(vPar * vPar + vPerp * vPerp);
-    if (!(speed > 0))       throw new Error("初始速度不能为 0（vPar 与 vPerp 至少一个非零）。");
+    if (!(speed > 0)) throw new Error("初始速度不能为 0。");
 
     if (!(toroidalTurns > 0)) throw new Error("环向圈数必须大于 0。");
-    if (stepsPerGyro < 20)    throw new Error("每回旋周期步数应至少为 20。");
+    if (stepsPerGyro < 20) throw new Error("每回旋周期步数应至少为 20。");
 
     // --------------------------------------------------------
     // 初始速度
@@ -399,7 +490,7 @@ function runTokamakSimulation(params) {
 
     var init = buildInitialVelocity(
         R0, a, B0, qFactor,
-        rSurf, vPar, vPerp
+        rSurf, vPar, vPerp, axisZ
     );
 
     var velocity0 = init.velocity;
@@ -413,32 +504,26 @@ function runTokamakSimulation(params) {
     var cyclotronFrequency = omega / (2 * Math.PI);
     var cyclotronPeriod = 2 * Math.PI / omega;
 
-    // --------------------------------------------------------
-    // 时间步长
-    // --------------------------------------------------------
-
     var dt = cyclotronPeriod / stepsPerGyro;
 
-    // 一个环向圈所需时间（沿磁场方向的环向分速度）
-    //   v_phi = v * (B_phi / |B|)，在发射点近似
-    var B0_unit = tokamakFieldUnit(
-        R0 + rSurf, 0, 0,
+    // --------------------------------------------------------
+    // 一个环向圈的时间
+    // --------------------------------------------------------
+
+    var B_unit = tokamakFieldUnit(
+        init.position[0], init.position[1], init.position[2],
         R0, a, B0, qFactor
     );
+
     var bPhiFrac = Math.sqrt(
-        B0_unit[0] * B0_unit[0] + B0_unit[1] * B0_unit[1]
+        B_unit[0] * B_unit[0] + B_unit[1] * B_unit[1]
     );
 
     var vPhi = speed * Math.max(bPhiFrac, 1e-9);
     var timePerTurn = 2 * Math.PI * R0 / vPhi;
 
     var totalTime = toroidalTurns * timePerTurn;
-
     var numSteps = Math.ceil(totalTime / dt);
-
-    // --------------------------------------------------------
-    // 步数上限保护（避免浏览器卡死）
-    // --------------------------------------------------------
 
     if (numSteps > 1000000) {
         throw new Error(
@@ -447,11 +532,11 @@ function runTokamakSimulation(params) {
     }
 
     // --------------------------------------------------------
-    // 初始状态
+    // 时间积分
     // --------------------------------------------------------
 
     var state = [
-        R0 + rSurf, 0, 0,
+        init.position[0], init.position[1], init.position[2],
         velocity0[0], velocity0[1], velocity0[2]
     ];
 
@@ -465,25 +550,16 @@ function runTokamakSimulation(params) {
     var maxEnergyError = 0;
 
     var rMax = rSurf;
-    var RMin = R0 + rSurf;
-    var RMax = R0 + rSurf;
-
-    // --------------------------------------------------------
-    // 时间积分
-    // --------------------------------------------------------
+    var RMin = init.position[0];
+    var RMax = init.position[0];
 
     for (var i = 0; i < numSteps; i++) {
 
-        state = rk4Step(
-            state, dt,
-            charge, mass,
-            R0, a, B0, qFactor
-        );
+        state = rk4Step(state, dt, charge, mass, R0, a, B0, qFactor);
 
         positions[i + 1] = [state[0], state[1], state[2]];
         times[i + 1] = times[i] + dt;
 
-        // 能量
         var sp = Math.sqrt(
             state[3] * state[3] + state[4] * state[4] + state[5] * state[5]
         );
@@ -491,16 +567,16 @@ function runTokamakSimulation(params) {
         var err = Math.abs(e - initialEnergy) / initialEnergy * 100;
         if (err > maxEnergyError) maxEnergyError = err;
 
-        // 约束诊断：最大离轴距离、R 范围
         var R = Math.sqrt(state[0] * state[0] + state[1] * state[1]);
-        var dr = Math.sqrt((R - R0) * (R - R0) + state[2] * state[2]);
+        var dz = state[2] - axisZ;
+        var dr = Math.sqrt((R - R0) * (R - R0) + dz * dz);
         if (dr > rMax) rMax = dr;
         if (R < RMin) RMin = R;
         if (R > RMax) RMax = R;
     }
 
     // --------------------------------------------------------
-    // 磁场螺旋线（可视化）
+    // 磁力线
     // --------------------------------------------------------
 
     var fieldLines = traceFieldLines(
@@ -509,21 +585,41 @@ function runTokamakSimulation(params) {
     );
 
     // --------------------------------------------------------
-    // 发射点物理量
+    // 发射点诊断量
     // --------------------------------------------------------
 
-    var B_poloidal_launch = (a / R0) * B0 / qFactor * (rSurf / a);
-    var B_toroidal_launch = B0 * R0 / (R0 + rSurf);
+    var Bcyl = null;
+
+    if (GF) {
+        Bcyl = GF.fieldCylindrical(init.position[0], init.position[2]);
+    }
+
+    var B_poloidal_launch;
+    var B_toroidal_launch;
+
+    if (Bcyl) {
+        B_toroidal_launch = Math.abs(Bcyl.Bphi);
+        B_poloidal_launch = Math.sqrt(Bcyl.BR * Bcyl.BR + Bcyl.BZ * Bcyl.BZ);
+    } else {
+        B_poloidal_launch = (a / R0) * B0 / qFactor * (rSurf / a);
+        B_toroidal_launch = B0 * R0 / (R0 + rSurf);
+    }
+
     var pitchAngle = Math.atan2(B_poloidal_launch, B_toroidal_launch) * 180 / Math.PI;
 
-    // 发射点实际安全因子
-    var q_actual = (rSurf * B_toroidal_launch) / ((R0 + rSurf) * B_poloidal_launch);
+    var q_actual = (rSurf * B_toroidal_launch)
+        / ((R0 + rSurf) * Math.max(B_poloidal_launch, 1e-30));
 
     // --------------------------------------------------------
     // 返回结果
     // --------------------------------------------------------
 
     return {
+        "mode": activeMode,
+        "gsfit": gsfitInfo,
+        "axisR": R0,
+        "axisZ": axisZ,
+
         "positions": positions,
         "times": times,
         "field_lines": fieldLines,
@@ -566,6 +662,7 @@ if (typeof module !== "undefined" && module.exports) {
     module.exports = {
         runTokamakSimulation: runTokamakSimulation,
         tokamakField: tokamakField,
-        traceFieldLines: traceFieldLines
+        traceFieldLines: traceFieldLines,
+        getGSFitField: getGSFitField
     };
 }

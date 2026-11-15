@@ -77,6 +77,39 @@
         <div class="parameter-group">
 
             <h3>
+                磁场数据源 · Field source
+            </h3>
+
+            <label>
+                数据源
+
+                <select id="fieldMode">
+
+                    <option value="gsfit" selected>
+                        GSFit 重建（ST40 #12050）
+                    </option>
+
+                    <option value="analytic">
+                        解析示意模型
+                    </option>
+
+                </select>
+
+            </label>
+
+            <div
+                id="gsfit-info"
+                class="data-info"
+            >
+                数据加载中…
+            </div>
+
+        </div>
+
+
+        <div class="parameter-group">
+
+            <h3>
                 装置 · Device
             </h3>
 
@@ -87,7 +120,7 @@
                 <input
                     id="R0"
                     type="number"
-                    value="2.0"
+                    value="0.5155"
                     step="any"
                 >
 
@@ -100,7 +133,7 @@
                 <input
                     id="a"
                     type="number"
-                    value="0.6"
+                    value="0.1863"
                     step="any"
                 >
 
@@ -113,7 +146,7 @@
                 <input
                     id="B0"
                     type="number"
-                    value="0.05"
+                    value="1.3929"
                     step="any"
                 >
 
@@ -126,7 +159,7 @@
                 <input
                     id="q"
                     type="number"
-                    value="3.0"
+                    value="1.0"
                     step="any"
                 >
 
@@ -174,7 +207,7 @@
                 <input
                     id="rSurf"
                     type="number"
-                    value="0.3"
+                    value="0.1"
                     step="any"
                 >
 
@@ -235,7 +268,7 @@
                 <input
                     id="stepsPerGyro"
                     type="number"
-                    value="30"
+                    value="60"
                     step="1"
                 >
 
@@ -369,6 +402,11 @@
 <section class="results-section">
 
     <div class="result-card">
+        <span>磁场数据源</span>
+        <strong id="source">-</strong>
+    </div>
+
+    <div class="result-card">
         <span>发射点磁场 B (T)</span>
         <strong id="B-launch">-</strong>
     </div>
@@ -435,6 +473,12 @@
 </script>
 
 
+<!-- GSFit ST40 数据（11 组线圈 / 364 filament / psi 网格 / 磁面） -->
+<script src="./gsfit_data.js"></script>
+
+<!-- GSFit 磁场模块：psi 梯度 + 线圈毕奥-萨伐尔 + 磁力线追踪 -->
+<script src="./gsfit_field.js"></script>
+
 <!-- 纯前端物理引擎（浏览器本地计算，无需后端） -->
 <script src="./simulation.js"></script>
 
@@ -462,7 +506,9 @@
 
 
     // 本页面为纯前端版本：物理计算由 simulation.js 在浏览器本地完成，
-    // 无需后端。直接双击 index.html（file://）即可运行。
+    // 无需后端。ES Module 受浏览器 CORS 限制，需用本地静态服务器打开
+    // （例如在本目录执行 python -m http.server 8000 后访问
+    //   http://localhost:8000/ ），直接双击 file:// 会加载失败。
 
     window.THREE = THREE;
     window.OrbitControls = OrbitControls;
